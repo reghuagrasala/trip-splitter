@@ -235,11 +235,26 @@ function renderMembersSetup(){
 }
 
 async function saveTrip(){
+  // Auto-save the member if the user forgot to click the small "Add" button
+  const mName=document.getElementById('memberName').value.trim();
+  const mPhone=document.getElementById('memberPhone').value.trim();
+  if(mName || mPhone){
+    if(!mName){ toast('Enter a name for the member you are typing'); return; }
+    if(!isValidPhone(mPhone)){ toast('Enter a valid mobile number (10 digits)'); return; }
+    if(!state.members.some(m=>m.name.toLowerCase()===mName.toLowerCase())){
+      state.members.push({id:uid(),name:mName,phone:mPhone});
+      document.getElementById('memberName').value=''; document.getElementById('memberPhone').value='';
+      renderMembersSetup();
+    }
+  }
+
   const name=document.getElementById('tripName').value.trim();
   const days=parseInt(document.getElementById('tripDays').value,10);
   if(!name){ toast('Enter trip name'); return; }
   if(!days||days<1){ toast('Enter number of days'); return; }
-  if(state.members.length<1){ toast('Add at least one member'); return; }
+  // Require at least 2 members before saving
+  if(state.members.length<2){ toast('Add yourself and at least one other member'); return; }
+
   state.id = uid();
   state.name=name; state.days=days; state.expenses=[];
   state.creatorId=state.members[0].id; state.sharedWith=null;
