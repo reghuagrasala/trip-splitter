@@ -470,7 +470,8 @@ async function loadTrip(id){
 
 (function init(){
   const path=location.pathname;
-  const m=path.match(/^\/t\/([a-z0-9-]+)$/i);
+  // FIXED SYNTAX ERROR HERE (Added double backslashes)
+  const m=path.match(/^\\/t\\/([a-z0-9-]+)$/i);
   if(m) loadTrip(m[1]);
   else document.getElementById('landing').classList.remove('hidden');
 })();
@@ -528,8 +529,8 @@ export default {
       }
     }
 
-    // Root HTML page and Short links
-    if (path === '/' || path.startsWith('/t/')) {
+    // Root HTML page and Short links (Added /index.html check as a safety net)
+    if (path === '/' || path === '/index.html' || path.startsWith('/t/')) {
       return new Response(HTML_PAGE, {
         headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-cache' },
       });
