@@ -1,6 +1,6 @@
 /**
  * Trip Splitter – Cloudflare Pages Worker (_worker.js)
- * Make sure your KV namespace (TRIP_STORE) is bound in your Pages project settings.
+ * Features: Short Links, KV Storage, Smart Save, and Magic Auth Links
  */
 
 const HTML_PAGE = `<!DOCTYPE html>
@@ -84,7 +84,7 @@ const HTML_PAGE = `<!DOCTYPE html>
 </head>
 <body>
   <div class="container">
-    <div class="header"><h1><span>₹</span> Trip Splitter</h1><p>Split expenses fairly · Short clean links</p></div>
+    <div class="header"><h1><span>₹</span> Trip Splitter</h1><p>Split expenses fairly · Short secure links</p></div>
     <div id="loading" class="loading hidden">Loading trip…</div>
     <div id="landing" class="card"><h2>Start a trip</h2><p class="hint">Create a new trip or open a shared link. Each person picks “I am …” once and can only edit their own expenses.</p><button class="btn btn-primary" onclick="showCreate()">Create new trip</button></div>
     <div id="setup" class="card hidden"><h2>Set up your trip</h2><p class="hint">Add every member with name + mobile. Mobile is used for WhatsApp / SMS sharing.</p>
@@ -100,9 +100,9 @@ const HTML_PAGE = `<!DOCTYPE html>
     <div id="app" class="hidden">
       <div class="card" style="padding-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><h2 id="appTripName" style="margin-bottom:2px"></h2><div style="font-size:.85rem;color:var(--muted)" id="appTripMeta"></div></div><button class="btn btn-secondary btn-sm" onclick="resetAll()">New</button></div></div>
       <div id="identityBanner" class="identity-banner hidden"><div>You are <span class="you" id="currentYou"></span></div><button class="btn btn-secondary btn-sm" onclick="changeIdentity()">Change</button></div>
-      <div id="shareCard" class="card hidden"><h2 style="font-size:1.1rem">Share with members</h2><p class="hint">Send the short link to all other members via WhatsApp or SMS.</p>
+      <div id="shareCard" class="card hidden"><h2 style="font-size:1.1rem">Share with members</h2><p class="hint">Send the secure personal links to all other members via WhatsApp or SMS.</p>
         <div class="share-actions"><button class="btn btn-whatsapp" onclick="shareAll('whatsapp')">WhatsApp to all members</button><button class="btn btn-sms" onclick="shareAll('sms')">SMS to all members</button><button class="btn btn-secondary" onclick="markAsShared()">I’ve shared — show “Shared with” bar</button></div>
-        <div style="margin-top:12px"><label>Or copy short link</label><input type="text" id="shareLinkQuick" readonly onclick="this.select()"><button class="btn btn-secondary btn-sm" onclick="copyShareLink()">Copy link</button></div>
+        <div style="margin-top:12px"><label>Or copy short public link</label><input type="text" id="shareLinkQuick" readonly onclick="this.select()"><button class="btn btn-secondary btn-sm" onclick="copyShareLink()">Copy link</button></div>
       </div>
       <div class="tabs"><button class="tab active" data-tab="expenses" onclick="switchTab('expenses')">Expenses</button><button class="tab" data-tab="balances" onclick="switchTab('balances')">Balances</button><button class="tab" data-tab="members" onclick="switchTab('members')">Members</button></div>
       <div id="tab-expenses" class="section active"><div class="card"><h2 style="font-size:1.1rem">Add my expense</h2><p class="locked-note" id="payerLockNote">You can only add expenses under your own name.</p>
@@ -114,7 +114,7 @@ const HTML_PAGE = `<!DOCTYPE html>
       </div>
       <div id="tab-balances" class="section"><div class="card"><div class="summary-grid"><div class="stat"><div class="label">Total spent</div><div class="value" id="totalSpent">₹0</div></div><div class="stat"><div class="label">Per person</div><div class="value" id="perPerson">₹0</div></div></div>
         <h2 style="font-size:1.1rem;margin-bottom:12px">Settlements</h2><div id="balancesList"><div class="empty">Add expenses to see balances</div></div>
-        <div class="share-box"><label>Share this trip (short link)</label><input type="text" id="shareLink" readonly onclick="this.select()"><button class="btn btn-primary btn-sm" onclick="copyShareLink()">Copy link</button></div>
+        <div class="share-box"><label>Share this trip (public short link)</label><input type="text" id="shareLink" readonly onclick="this.select()"><button class="btn btn-primary btn-sm" onclick="copyShareLink()">Copy link</button></div>
       </div></div>
       <div id="tab-members" class="section"><div class="card"><h2 style="font-size:1.1rem">Members</h2><p class="hint">Only the trip creator can add/remove members.</p><div id="appMembersList" class="members-list"></div>
         <div id="addMemberSection"><label style="margin-top:8px">Add another member</label><div class="row"><input type="text" id="newMemberName" placeholder="Name" maxlength="40"><button class="btn btn-primary btn-sm" onclick="addMemberToTrip()" style="width:auto">Add</button></div><input type="tel" id="newMemberPhone" placeholder="Mobile number" maxlength="15" style="margin-top:-6px"></div>
@@ -202,7 +202,6 @@ function showApp(){
   renderApp();
   updateShareLinks();
   updateSharedBar();
-  history.replaceState(null,'', '/t/'+state.id);
 }
 
 function switchTab(tab){
@@ -222,7 +221,7 @@ function addMember(){
   if(!phone){ toast('Enter mobile number for sharing'); return; }
   if(!isValidPhone(phone)){ toast('Enter a valid mobile number (10 digits)'); return; }
   if(state.members.some(m=>m.name.toLowerCase()===name.toLowerCase())){ toast('Name already added'); return; }
-  state.members.push({id:uid(),name,phone});
+  state.members.push({id:uid(), name, phone, token:uid()});
   document.getElementById('memberName').value='';
   document.getElementById('memberPhone').value='';
   renderMembersSetup();
@@ -235,14 +234,14 @@ function renderMembersSetup(){
 }
 
 async function saveTrip(){
-  // Auto-save the member if the user forgot to click the small "Add" button
+  // Smart save: auto-add un-added member in the typing box
   const mName=document.getElementById('memberName').value.trim();
   const mPhone=document.getElementById('memberPhone').value.trim();
   if(mName || mPhone){
     if(!mName){ toast('Enter a name for the member you are typing'); return; }
     if(!isValidPhone(mPhone)){ toast('Enter a valid mobile number (10 digits)'); return; }
     if(!state.members.some(m=>m.name.toLowerCase()===mName.toLowerCase())){
-      state.members.push({id:uid(),name:mName,phone:mPhone});
+      state.members.push({id:uid(), name:mName, phone:mPhone, token:uid()});
       document.getElementById('memberName').value=''; document.getElementById('memberPhone').value='';
       renderMembersSetup();
     }
@@ -252,7 +251,6 @@ async function saveTrip(){
   const days=parseInt(document.getElementById('tripDays').value,10);
   if(!name){ toast('Enter trip name'); return; }
   if(!days||days<1){ toast('Enter number of days'); return; }
-  // Require at least 2 members before saving
   if(state.members.length<2){ toast('Add yourself and at least one other member'); return; }
 
   state.id = uid();
@@ -265,6 +263,7 @@ async function saveTrip(){
     if(!res.ok) throw new Error('Create failed');
     const data=await res.json();
     state.id = data.id || state.id;
+    history.replaceState(null,'', '/t/'+state.id);
     showApp();
     toast('Trip saved! Share the short link');
   }catch(e){
@@ -297,9 +296,6 @@ function updateSharedBar(){
   else bar.classList.add('hidden');
 }
 
-function getShareMessage(){
-  return \`Join our trip "\${state.name}" on Trip Splitter.\\n\\nOpen this link and pick your name:\\n\${shortLink()}\`;
-}
 async function shareAll(type){
   const others=state.members.filter(m=>m.id!==currentUserId);
   if(!others.length){ toast('No other members to share with'); return; }
@@ -309,12 +305,17 @@ async function shareAll(type){
     if(!withPhone.length){ alert('Cannot share.\\n\\nThese members have no valid mobile number:\\n• '+missing.join('\\n• ')+'\\n\\nAdd numbers in Members tab first.'); toast('Missing mobile numbers'); return; }
     if(!confirm('Some members have no valid number:\\n• '+missing.join('\\n• ')+'\\n\\nShare only with '+withPhone.length+' member(s)?')){ toast('Share cancelled'); return; }
   }
-  const msg=encodeURIComponent(getShareMessage());
+  
   let opened=0;
   withPhone.forEach((m,idx)=>{
     const phone=cleanPhone(m.phone);
+    // GENERATE THE SECURE MAGIC LINK
+    const magicLink = \`\${shortLink()}?u=\${m.id}&k=\${m.token || ''}\`;
+    const customMsg = \`Join our trip "\${state.name}" on Trip Splitter.\\n\\nClick your personal secure link to access your expenses:\\n\${magicLink}\`;
+    const encodedMsg = encodeURIComponent(customMsg);
+
     setTimeout(()=>{
-      try{ window.open(type==='whatsapp'?\`https://wa.me/\${phone}?text=\${msg}\`:\`sms:\${phone}?body=\${msg}\`,'_blank'); }
+      try{ window.open(type==='whatsapp'?\`https://wa.me/\${phone}?text=\${encodedMsg}\`:\`sms:\${phone}?body=\${encodedMsg}\`,'_blank'); }
       catch(e){ toast('Could not open for '+m.name); }
       opened++;
       if(opened===withPhone.length) setTimeout(()=>{ if(confirm('Did you send the messages? Mark as shared?')) markAsShared(); },800);
@@ -322,6 +323,7 @@ async function shareAll(type){
   });
   toast(\`Opening \${type==='whatsapp'?'WhatsApp':'SMS'} for \${withPhone.length} member\${withPhone.length>1?'s':''}…\`);
 }
+
 async function markAsShared(){
   const others=state.members.filter(m=>m.id!==state.creatorId);
   state.sharedWith=others.map(m=>m.name.slice(0,3));
@@ -410,7 +412,7 @@ async function addMemberToTrip(){
   if(!phone){ toast('Enter mobile number for sharing'); return; }
   if(!isValidPhone(phone)){ toast('Enter a valid mobile number (10 digits)'); return; }
   if(state.members.some(m=>m.name.toLowerCase()===name.toLowerCase())){ toast('Already exists'); return; }
-  state.members.push({id:uid(),name,phone});
+  state.members.push({id:uid(), name, phone, token:uid()});
   document.getElementById('newMemberName').value=''; document.getElementById('newMemberPhone').value='';
   renderAppMembers(); await saveToServer(); toast('Member added');
 }
@@ -437,9 +439,29 @@ async function loadTrip(id){
     if(!res.ok) throw new Error('Not found');
     state=await res.json();
     if(!state.creatorId&&state.members.length) state.creatorId=state.members[0].id;
+    
+    // READ MAGIC LINKS
+    const urlParams = new URLSearchParams(window.location.search);
+    const magicU = urlParams.get('u');
+    const magicK = urlParams.get('k');
+    
+    if (magicU && magicK) {
+      const validMember = state.members.find(m => m.id === magicU && m.token === magicK);
+      if (validMember) {
+        currentUserId = validMember.id;
+        setStoredIdentity(validMember.id);
+        history.replaceState(null,'', '/t/'+state.id); // Clean the address bar instantly
+        showApp();
+        return;
+      } else {
+        toast("Invalid or expired secure link.");
+      }
+    }
+
     const stored=getStoredIdentity();
     if(stored&&state.members.some(m=>m.id===stored)){ currentUserId=stored; showApp(); }
     else showIdentityPicker();
+    
   }catch(e){
     toast('Trip not found or offline');
     document.getElementById('landing').classList.remove('hidden');
@@ -448,7 +470,7 @@ async function loadTrip(id){
 
 (function init(){
   const path=location.pathname;
-  const m=path.match(/^\\/t\\/([a-z0-9-]+)$/i);
+  const m=path.match(/^\/t\/([a-z0-9-]+)$/i);
   if(m) loadTrip(m[1]);
   else document.getElementById('landing').classList.remove('hidden');
 })();
@@ -507,13 +529,13 @@ export default {
     }
 
     // Root HTML page and Short links
-    if (path === '/' || path === '/index.html' || path.startsWith('/t/')) {
+    if (path === '/' || path.startsWith('/t/')) {
       return new Response(HTML_PAGE, {
         headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-cache' },
       });
     }
 
-    // This ensures your icons and manifest load correctly from GitHub files
+    // Load assets (icons)
     return env.ASSETS.fetch(request);
   },
 };
