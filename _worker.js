@@ -143,22 +143,94 @@ function escapeHtml(s){ if(!s)return''; return s.replace(/&/g,'&amp;').replace(/
 function cleanPhone(p){ if(!p)return''; let x=String(p).replace(/\\D/g,''); if(x.length===10)x='91'+x; return (x.length>=10&&x.length<=15)?x:''; }
 function isValidPhone(p){ return cleanPhone(p)!==''; }
 
+const DB_NAME='trip-splitter-local-v1';
+const DB_STORE='trips';
+let localDbPromise=null;
+
+function openLocalDb(){
+  if(localDbPromise) return localDbPromise;
+  localDbPromise=new Promise((resolve,reject)=>{
+    if(!('indexedDB' in window)){ reject(new Error('IndexedDB unavailable')); return; }
+    const req=indexedDB.open(DB_NAME,1);
+    req.onupgradeneeded=()=>{
+      const db=req.result;
+      if(!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE,{keyPath:'id'});
+    };
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error||new Error('IndexedDB error'));
+  });
+  return localDbPromise;
+}
+function localPut(trip){
+  return openLocalDb().then(db=>new Promise((resolve,reject)=>{
+    const tx=db.transaction(DB_STORE,'readwrite');
+    tx.objectStore(DB_STORE).put(JSON.parse(JSON.stringify(trip)));
+    tx.oncomplete=()=>resolve();
+    tx.onerror=()=>reject(tx.error||new Error('Local save failed'));
+  }));
+}
+function localGet(id){
+  return openLocalDb().then(db=>new Promise((resolve,reject)=>{
+    const tx=db.transaction(DB_STORE,'readonly');
+    const req=tx.objectStore(DB_STORE).get(id);
+    req.onsuccess=()=>resolve(req.result||null);
+    req.onerror=()=>reject(req.error||new Error('Local read failed'));
+  }));
+}
+function updateNetworkStatus(){
+  const el=document.getElementById('networkStatus');
+  if(!el)return;
+  if(navigator.onLine){
+    el.textContent='Online · trip remains local until you choose Sync & Share';
+    el.classList.remove('offline');
+  }else{
+    el.textContent='Offline · all changes are saved on this device';
+    el.classList.add('offline');
+  }
+}
+window.addEventListener('online',updateNetworkStatus);
+window.addEventListener('offline',updateNetworkStatus);
+
 async function saveToServer(){
-  if(!state.id || saving) return;
-  saving = true;
-  try{
-    const res = await fetch(API+'/api/trips/'+state.id, {
-      method:'PUT',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(state)
-    });
-    if(!res.ok) throw new Error('Save failed');
-  }catch(e){
-    console.error(e);
-    toast('Could not save – check connection');
-  }finally{ saving=false; }
+  if(!state.id)return;
+  try{ await localPut(state); updateNetworkStatus(); }
+  catch(e){ console.error(e); toast('Could not save locally'); }
 }
 
+async function syncToServer(){
+  if(!state.id)throw new Error('No trip to sync');
+  if(!navigator.onLine)throw new Error('No internet connection');
+  const res=await fetch(API+'/api/trips',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+  if(!res.ok)throw new Error('Sync failed');
+  state.syncedAt=Date.now();
+  await localPut(state);
+}
+
+async function syncAndShare(){
+  try{
+    await syncToServer();
+    updateShareLinks();
+    const card=document.getElementById('shareCard');
+    if(card)card.classList.remove('hidden');
+    toast('Trip synced. Ready to share.');
+  }catch(e){
+    toast(e.message==='No internet connection'?'Connect to the internet to share':'Could not sync trip');
+  }
+}
+
+async function pullLatest(){
+  if(!navigator.onLine){toast('Offline — local trip is being used');return;}
+  try{
+    const res=await fetch(API+'/api/trips/'+state.id,{cache:'no-store'});
+    if(!res.ok)throw new Error();
+    state=await res.json();
+    await localPut(state);
+    showApp();
+    toast('Latest shared trip loaded');
+  }catch(e){toast('Could not load the shared version');}
+}
+
+function shortLink()
 function shortLink(){ return location.origin + '/t/' + state.id; }
 function updateShareLinks(){
   const link = shortLink();
@@ -265,19 +337,14 @@ async function saveTrip(){
   currentUserId=state.creatorId;
   setStoredIdentity(currentUserId);
   try{
-    const res=await fetch(API+'/api/trips',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
-    if(!res.ok) throw new Error('Create failed');
-    const data=await res.json();
-    state.id = data.id || state.id;
+    await localPut(state);
     history.replaceState(null,'', '/t/'+state.id);
     showApp();
-    toast('Trip saved! Share the short link');
+    toast('Trip saved on this device');
   }catch(e){
-    toast('Could not create trip – check connection');
+    toast('Could not save trip locally');
     console.error(e);
   }
-}
-
 function renderIdentityList(){
   document.getElementById('identityList').innerHTML=state.members.map(m=>\`<button onclick="selectIdentity('\${m.id}')"><div><div style="font-weight:600">\${escapeHtml(m.name)}</div>\${m.phone?\`<div class="phone">\${escapeHtml(m.phone)}</div>\`:''}</div><span style="color:var(--primary)">Select →</span></button>\`).join('');
 }
@@ -303,6 +370,8 @@ function updateSharedBar(){
 }
 
 async function shareAll(type){
+  if(!navigator.onLine){ toast('Connect to the internet to share secure links'); return; }
+  try{ await syncToServer(); }catch(e){ toast('Could not sync trip for sharing'); return; }
   const others=state.members.filter(m=>m.id!==currentUserId);
   if(!others.length){ toast('No other members to share with'); return; }
   const withPhone=[], missing=[];
@@ -430,6 +499,47 @@ async function removeMemberFromTrip(id){
   state.expenses=state.expenses.filter(e=>e.payerId!==id);
   renderAppMembers(); renderExpenses(); await saveToServer(); toast('Member removed');
 }
+async function shareTripFile(){
+  if(!state.id){toast('No trip to share');return;}
+  const payload={format:'Trip Splitter',version:1,exportedAt:new Date().toISOString(),trip:state};
+  const fileName=(state.name||'trip').replace(/[^a-z0-9_-]+/gi,'-').replace(/^-+|-+$/g,'')+'.trip';
+  const file=new File([JSON.stringify(payload,null,2)],fileName,{type:'application/json'});
+  try{
+    if(navigator.share&&(!navigator.canShare||navigator.canShare({files:[file]}))){
+      await navigator.share({title:'Trip Splitter',text:'Trip data: '+state.name,files:[file]});
+      toast('Trip file shared');
+    }else{
+      const url=URL.createObjectURL(file);
+      const link=document.createElement('a');
+      link.href=url;link.download=fileName;document.body.appendChild(link);link.click();link.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1000);
+      toast('Trip file created');
+    }
+  }catch(e){if(e&&e.name!=='AbortError')toast('Could not share trip file');}
+}
+
+function importTripFile(event){
+  const file=event.target.files&&event.target.files[0];
+  event.target.value='';
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=async()=>{
+    try{
+      const payload=JSON.parse(reader.result);
+      const incoming=payload&&payload.trip;
+      if(!incoming||!incoming.id||!Array.isArray(incoming.members)||!Array.isArray(incoming.expenses))throw new Error();
+      state=incoming;
+      currentUserId=null;
+      clearStoredIdentity();
+      await localPut(state);
+      history.replaceState(null,'','/t/'+state.id);
+      showIdentityPicker();
+      toast('Trip imported — choose your name');
+    }catch(e){toast('Invalid Trip Splitter file');}
+  };
+  reader.readAsText(file);
+}
+
 function copyShareLink(){
   const input=document.getElementById('shareLink')||document.getElementById('shareLinkQuick');
   if(!input)return; input.select();
