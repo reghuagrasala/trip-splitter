@@ -80,6 +80,12 @@ const HTML_PAGE = `<!DOCTYPE html>
     .share-actions{display:grid;gap:10px;margin-top:12px}
     .shared-bar{position:fixed;bottom:0;left:0;right:0;background:#e7e5e4;color:#a8a29e;font-size:.8rem;text-align:center;padding:10px 16px;border-top:1px solid #d6d3d1;z-index:50;pointer-events:none}
     .loading{text-align:center;padding:40px;color:var(--muted)}
+    .network-status{margin-top:8px;font-size:.78rem;color:var(--muted);text-align:center}
+    .network-status.offline{color:#b45309;font-weight:600}
+    .offline-note{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:10px;padding:10px 12px;font-size:.82rem;margin-bottom:12px}
+    .sync-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+    .sync-controls .btn{font-size:.82rem;padding:9px 10px}
+    .file-input{display:none}
   </style>
 </head>
 <body>
