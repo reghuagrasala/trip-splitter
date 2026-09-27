@@ -403,7 +403,7 @@ async function shareAll(type){
 async function markAsShared(){
   const others=state.members.filter(m=>m.id!==state.creatorId);
   state.sharedWith=others.map(m=>m.name.slice(0,3));
-  await saveToServer();
+  try{ await syncToServer(); }catch(e){ toast(e.message==='No internet connection'?'Connect to the internet before marking shared':'Could not sync trip'); return; }
   updateSharedBar();
   document.getElementById('shareCard').classList.add('hidden');
   toast('Shared bar is now visible to everyone');
