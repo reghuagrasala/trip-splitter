@@ -90,9 +90,9 @@ const HTML_PAGE = `<!DOCTYPE html>
 </head>
 <body>
   <div class="container">
-    <div class="header"><h1><span>₹</span> Trip Splitter</h1><p>Split expenses fairly · Short secure links</p></div>
+    <div class="header"><h1><span>₹</span> Trip Splitter</h1><p>Offline-first · Share only when you choose</p></div>
     <div id="loading" class="loading hidden">Loading trip…</div>
-    <div id="landing" class="card"><h2>Start a trip</h2><p class="hint">Create a new trip or open a shared link. Each person picks “I am …” once and can only edit their own expenses.</p><button class="btn btn-primary" onclick="showCreate()">Create new trip</button></div>
+    <div id="landing" class="card"><h2>Start a trip</h2><p class="hint">Create a new trip or open a shared link. Each person picks “I am …” once and can only edit their own expenses.</p><button class="btn btn-primary" onclick="showCreate()">Create new trip</button><button class="btn btn-secondary" onclick="document.getElementById('importTripFile').click()" style="margin-top:8px">Import trip file</button><input id="importTripFile" class="file-input" type="file" accept=".trip,.json,application/json" onchange="importTripFile(event)"><p class="hint" style="margin:12px 0 0">Trips and expenses are saved on this device. Internet is used only when you sync/share a trip link.</p></div>
     <div id="setup" class="card hidden"><h2>Set up your trip</h2><p class="hint">Add every member with name + mobile. Mobile is used for WhatsApp / SMS sharing.</p>
       <label>Trip name</label><input type="text" id="tripName" placeholder="e.g. Munnar trip" maxlength="60">
       <label>Number of days</label><input type="number" id="tripDays" placeholder="e.g. 3" min="1" max="60">
@@ -104,10 +104,10 @@ const HTML_PAGE = `<!DOCTYPE html>
     </div>
     <div id="identity" class="card hidden"><h2>Who are you?</h2><p class="hint">Pick yourself once. You can only add/delete expenses under your name.</p><div id="identityList" class="identity-pick"></div><button class="btn btn-secondary" style="margin-top:16px" onclick="backToLanding()">Cancel</button></div>
     <div id="app" class="hidden">
-      <div class="card" style="padding-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><h2 id="appTripName" style="margin-bottom:2px"></h2><div style="font-size:.85rem;color:var(--muted)" id="appTripMeta"></div></div><button class="btn btn-secondary btn-sm" onclick="resetAll()">New</button></div></div>
+      <div class="card" style="padding-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><h2 id="appTripName" style="margin-bottom:2px"></h2><div style="font-size:.85rem;color:var(--muted)" id="appTripMeta"></div></div><button class="btn btn-secondary btn-sm" onclick="resetAll()">New</button></div><div class="sync-controls"><button class="btn btn-primary" onclick="syncAndShare()">Sync &amp; Share</button><button class="btn btn-secondary" onclick="shareTripFile()">Share trip file</button></div><div id="networkStatus" class="network-status"></div></div></div>
       <div id="identityBanner" class="identity-banner hidden"><div>You are <span class="you" id="currentYou"></span></div><button class="btn btn-secondary btn-sm" onclick="changeIdentity()">Change</button></div>
       <div id="shareCard" class="card hidden"><h2 style="font-size:1.1rem">Share with members</h2><p class="hint">Send the secure personal links to all other members via WhatsApp or SMS.</p>
-        <div class="share-actions"><button class="btn btn-whatsapp" onclick="shareAll('whatsapp')">WhatsApp to all members</button><button class="btn btn-sms" onclick="shareAll('sms')">SMS to all members</button><button class="btn btn-secondary" onclick="markAsShared()">I’ve shared — show “Shared with” bar</button></div>
+        <div class="offline-note">Your trip stays on this device while offline. To create personal links, Trip Splitter uploads the current trip only when you press a sharing button.</div><div class="share-actions"><button class="btn btn-whatsapp" onclick="shareAll('whatsapp')">Sync &amp; WhatsApp to all</button><button class="btn btn-sms" onclick="shareAll('sms')">Sync &amp; SMS to all</button><button class="btn btn-secondary" onclick="shareTripFile()">Share trip file — no server</button><button class="btn btn-secondary" onclick="markAsShared()">I’ve shared — show “Shared with” bar</button></div>
         <div style="margin-top:12px"><label>Or copy short public link</label><input type="text" id="shareLinkQuick" readonly onclick="this.select()"><button class="btn btn-secondary btn-sm" onclick="copyShareLink()">Copy link</button></div>
       </div>
       <div class="tabs"><button class="tab active" data-tab="expenses" onclick="switchTab('expenses')">Expenses</button><button class="tab" data-tab="balances" onclick="switchTab('balances')">Balances</button><button class="tab" data-tab="members" onclick="switchTab('members')">Members</button></div>
@@ -279,6 +279,7 @@ function showApp(){
   document.getElementById('app').classList.remove('hidden');
   renderApp();
   updateShareLinks();
+  updateNetworkStatus();
   updateSharedBar();
 }
 
@@ -550,38 +551,63 @@ function resetAll(){ if(!confirm('Start a new trip?'))return; clearStoredIdentit
 async function loadTrip(id){
   document.getElementById('loading').classList.remove('hidden');
   document.getElementById('landing').classList.add('hidden');
+  const p=new URLSearchParams(location.search);
+  const magicU=p.get('u');
+  const magicK=p.get('k');
+  const wantsRemote=!!(magicU&&magicK);
   try{
-    const res=await fetch(API+'/api/trips/'+id);
-    if(!res.ok) throw new Error('Not found');
-    state=await res.json();
-    if(!state.creatorId&&state.members.length) state.creatorId=state.members[0].id;
-    
-    // READ MAGIC LINKS
-    const urlParams = new URLSearchParams(window.location.search);
-    const magicU = urlParams.get('u');
-    const magicK = urlParams.get('k');
-    
-    if (magicU && magicK) {
-      const validMember = state.members.find(m => m.id === magicU && m.token === magicK);
-      if (validMember) {
-        currentUserId = validMember.id;
-        setStoredIdentity(validMember.id);
-        history.replaceState(null,'', '/t/'+state.id); // Clean the address bar instantly
-        showApp();
+    if(!wantsRemote){
+      const local=await localGet(id).catch(()=>null);
+      if(local){
+        state=local;
+        if(!state.creatorId&&state.members.length)state.creatorId=state.members[0].id;
+        const stored=getStoredIdentity();
+        if(stored&&state.members.some(m=>m.id===stored)){currentUserId=stored;showApp();}
+        else showIdentityPicker();
         return;
-      } else {
-        toast("Invalid or expired secure link.");
       }
     }
-
+    if(!navigator.onLine)throw new Error('offline-no-local');
+    const res=await fetch(API+'/api/trips/'+id,{cache:'no-store'});
+    if(!res.ok)throw new Error('Not found');
+    state=await res.json();
+    if(!state.creatorId&&state.members.length)state.creatorId=state.members[0].id;
+    await localPut(state);
+    if(magicU&&magicK){
+      const validMember=state.members.find(m=>m.id===magicU&&m.token===magicK);
+      if(validMember){
+        currentUserId=validMember.id;
+        setStoredIdentity(validMember.id);
+        history.replaceState(null,'','/t/'+state.id);
+        showApp();
+        return;
+      }
+      toast('Invalid personal link.');
+    }
     const stored=getStoredIdentity();
-    if(stored&&state.members.some(m=>m.id===stored)){ currentUserId=stored; showApp(); }
+    if(stored&&state.members.some(m=>m.id===stored)){currentUserId=stored;showApp();}
     else showIdentityPicker();
-    
   }catch(e){
-    toast('Trip not found or offline');
-    document.getElementById('landing').classList.remove('hidden');
-  }finally{ document.getElementById('loading').classList.add('hidden'); }
+    const local=await localGet(id).catch(()=>null);
+    if(local){
+      state=local;
+      if(!state.creatorId&&state.members.length)state.creatorId=state.members[0].id;
+      const stored=getStoredIdentity();
+      if(stored&&state.members.some(m=>m.id===stored)){currentUserId=stored;showApp();}
+      else showIdentityPicker();
+      toast('Offline — using the saved trip on this device');
+    }else{
+      toast('Trip not found. Open it once online or import a trip file.');
+      document.getElementById('landing').classList.remove('hidden');
+    }
+  }finally{
+    document.getElementById('loading').classList.add('hidden');
+    updateNetworkStatus();
+  }
+}
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'}).catch(()=>{}));
 }
 
 (function init(){
