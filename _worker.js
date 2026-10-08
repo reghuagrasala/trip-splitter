@@ -80,19 +80,13 @@ const HTML_PAGE = `<!DOCTYPE html>
     .share-actions{display:grid;gap:10px;margin-top:12px}
     .shared-bar{position:fixed;bottom:0;left:0;right:0;background:#e7e5e4;color:#a8a29e;font-size:.8rem;text-align:center;padding:10px 16px;border-top:1px solid #d6d3d1;z-index:50;pointer-events:none}
     .loading{text-align:center;padding:40px;color:var(--muted)}
-    .network-status{margin-top:8px;font-size:.78rem;color:var(--muted);text-align:center}
-    .network-status.offline{color:#b45309;font-weight:600}
-    .offline-note{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:10px;padding:10px 12px;font-size:.82rem;margin-bottom:12px}
-    .sync-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
-    .sync-controls .btn{font-size:.82rem;padding:9px 10px}
-    .file-input{display:none}
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="header"><h1><span>₹</span> Trip Splitter</h1><p>Offline-first · Share only when you choose</p></div>
+    <div class="header"><h1><span>₹</span> Trip Splitter</h1><p>Split expenses fairly · Short secure links</p></div>
     <div id="loading" class="loading hidden">Loading trip…</div>
-    <div id="landing" class="card"><h2>Start a trip</h2><p class="hint">Create a new trip or open a shared link. Each person picks “I am …” once and can only edit their own expenses.</p><button class="btn btn-primary" onclick="showCreate()">Create new trip</button><button class="btn btn-secondary" onclick="document.getElementById('importTripFile').click()" style="margin-top:8px">Import trip file</button><input id="importTripFile" class="file-input" type="file" accept=".trip,.json,application/json" onchange="importTripFile(event)"><p class="hint" style="margin:12px 0 0">Trips and expenses are saved on this device. Internet is used only when you sync/share a trip link.</p></div>
+    <div id="landing" class="card"><h2>Start a trip</h2><p class="hint">Create a new trip or open a shared link. Each person picks “I am …” once and can only edit their own expenses.</p><button class="btn btn-primary" onclick="showCreate()">Create new trip</button></div>
     <div id="setup" class="card hidden"><h2>Set up your trip</h2><p class="hint">Add every member with name + mobile. Mobile is used for WhatsApp / SMS sharing.</p>
       <label>Trip name</label><input type="text" id="tripName" placeholder="e.g. Munnar trip" maxlength="60">
       <label>Number of days</label><input type="number" id="tripDays" placeholder="e.g. 3" min="1" max="60">
@@ -104,10 +98,10 @@ const HTML_PAGE = `<!DOCTYPE html>
     </div>
     <div id="identity" class="card hidden"><h2>Who are you?</h2><p class="hint">Pick yourself once. You can only add/delete expenses under your name.</p><div id="identityList" class="identity-pick"></div><button class="btn btn-secondary" style="margin-top:16px" onclick="backToLanding()">Cancel</button></div>
     <div id="app" class="hidden">
-      <div class="card" style="padding-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><h2 id="appTripName" style="margin-bottom:2px"></h2><div style="font-size:.85rem;color:var(--muted)" id="appTripMeta"></div></div><button class="btn btn-secondary btn-sm" onclick="resetAll()">New</button></div><div class="sync-controls"><button class="btn btn-primary" onclick="syncAndShare()">Sync &amp; Share</button><button class="btn btn-secondary" onclick="shareTripFile()">Share trip file</button></div><div id="networkStatus" class="network-status"></div></div></div>
+      <div class="card" style="padding-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><h2 id="appTripName" style="margin-bottom:2px"></h2><div style="font-size:.85rem;color:var(--muted)" id="appTripMeta"></div></div><button class="btn btn-secondary btn-sm" onclick="resetAll()">New</button></div></div>
       <div id="identityBanner" class="identity-banner hidden"><div>You are <span class="you" id="currentYou"></span></div><button class="btn btn-secondary btn-sm" onclick="changeIdentity()">Change</button></div>
       <div id="shareCard" class="card hidden"><h2 style="font-size:1.1rem">Share with members</h2><p class="hint">Send the secure personal links to all other members via WhatsApp or SMS.</p>
-        <div class="offline-note">Your trip stays on this device while offline. To create personal links, Trip Splitter uploads the current trip only when you press a sharing button.</div><div class="share-actions"><button class="btn btn-whatsapp" onclick="shareAll('whatsapp')">Sync &amp; WhatsApp to all</button><button class="btn btn-sms" onclick="shareAll('sms')">Sync &amp; SMS to all</button><button class="btn btn-secondary" onclick="shareTripFile()">Share trip file — no server</button><button class="btn btn-secondary" onclick="markAsShared()">I’ve shared — show “Shared with” bar</button></div>
+        <div class="share-actions"><button class="btn btn-whatsapp" onclick="shareAll('whatsapp')">WhatsApp to all members</button><button class="btn btn-sms" onclick="shareAll('sms')">SMS to all members</button><button class="btn btn-secondary" onclick="markAsShared()">I’ve shared — show “Shared with” bar</button></div>
         <div style="margin-top:12px"><label>Or copy short public link</label><input type="text" id="shareLinkQuick" readonly onclick="this.select()"><button class="btn btn-secondary btn-sm" onclick="copyShareLink()">Copy link</button></div>
       </div>
       <div class="tabs"><button class="tab active" data-tab="expenses" onclick="switchTab('expenses')">Expenses</button><button class="tab" data-tab="balances" onclick="switchTab('balances')">Balances</button><button class="tab" data-tab="members" onclick="switchTab('members')">Members</button></div>
@@ -135,27 +129,15 @@ const API = location.origin;
 let state = { id:null, name:'', days:0, members:[], expenses:[], creatorId:null, sharedWith:null };
 let currentUserId = null;
 let saving = false;
-
-function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
-function formatINR(n){ return '₹'+Number(n).toLocaleString('en-IN',{maximumFractionDigits:2}); }
-function toast(msg){ const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),2500); }
-function escapeHtml(s){ if(!s)return''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function cleanPhone(p){ if(!p)return''; let x=String(p).replace(/\\D/g,''); if(x.length===10)x='91'+x; return (x.length>=10&&x.length<=15)?x:''; }
-function isValidPhone(p){ return cleanPhone(p)!==''; }
-
-const DB_NAME='trip-splitter-local-v1';
+const DB_NAME='trip-splitter-local-v2';
 const DB_STORE='trips';
 let localDbPromise=null;
-
 function openLocalDb(){
   if(localDbPromise) return localDbPromise;
   localDbPromise=new Promise((resolve,reject)=>{
-    if(!('indexedDB' in window)){ reject(new Error('IndexedDB unavailable')); return; }
+    if(!window.indexedDB){ reject(new Error('IndexedDB unavailable')); return; }
     const req=indexedDB.open(DB_NAME,1);
-    req.onupgradeneeded=()=>{
-      const db=req.result;
-      if(!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE,{keyPath:'id'});
-    };
+    req.onupgradeneeded=()=>{ const db=req.result; if(!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE,{keyPath:'id'}); };
     req.onsuccess=()=>resolve(req.result);
     req.onerror=()=>reject(req.error||new Error('IndexedDB error'));
   });
@@ -165,72 +147,47 @@ function localPut(trip){
   return openLocalDb().then(db=>new Promise((resolve,reject)=>{
     const tx=db.transaction(DB_STORE,'readwrite');
     tx.objectStore(DB_STORE).put(JSON.parse(JSON.stringify(trip)));
-    tx.oncomplete=()=>resolve();
-    tx.onerror=()=>reject(tx.error||new Error('Local save failed'));
+    tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error||new Error('Local save failed'));
   }));
 }
 function localGet(id){
   return openLocalDb().then(db=>new Promise((resolve,reject)=>{
     const tx=db.transaction(DB_STORE,'readonly');
     const req=tx.objectStore(DB_STORE).get(id);
-    req.onsuccess=()=>resolve(req.result||null);
-    req.onerror=()=>reject(req.error||new Error('Local read failed'));
+    req.onsuccess=()=>resolve(req.result||null); req.onerror=()=>reject(req.error||new Error('Local read failed'));
   }));
 }
-function updateNetworkStatus(){
-  const el=document.getElementById('networkStatus');
-  if(!el)return;
-  if(navigator.onLine){
-    el.textContent='Online · trip remains local until you choose Sync & Share';
-    el.classList.remove('offline');
-  }else{
-    el.textContent='Offline · all changes are saved on this device';
-    el.classList.add('offline');
-  }
-}
-window.addEventListener('online',updateNetworkStatus);
-window.addEventListener('offline',updateNetworkStatus);
+async function persistStorage(){ try{ if(navigator.storage&&navigator.storage.persist) await navigator.storage.persist(); }catch(e){} }
+
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function formatINR(n){ return '₹'+Number(n).toLocaleString('en-IN',{maximumFractionDigits:2}); }
+function toast(msg){ const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),2500); }
+function escapeHtml(s){ if(!s)return''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function cleanPhone(p){ if(!p)return''; let x=String(p).replace(/\\D/g,''); if(x.length===10)x='91'+x; return (x.length>=10&&x.length<=15)?x:''; }
+function isValidPhone(p){ return cleanPhone(p)!==''; }
 
 async function saveToServer(){
-  if(!state.id)return;
-  try{ await localPut(state); updateNetworkStatus(); }
-  catch(e){ console.error(e); toast('Could not save locally'); }
-}
-
-async function syncToServer(){
-  if(!state.id)throw new Error('No trip to sync');
-  if(!navigator.onLine)throw new Error('No internet connection');
-  const res=await fetch(API+'/api/trips',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
-  if(!res.ok)throw new Error('Sync failed');
-  state.syncedAt=Date.now();
-  await localPut(state);
-}
-
-async function syncAndShare(){
+  if(!state.id) return;
+  try{ await localPut(state); }catch(e){ console.error(e); toast('Could not save locally'); return; }
+  if(!navigator.onLine || saving) return;
+  saving=true;
   try{
-    await syncToServer();
-    updateShareLinks();
-    const card=document.getElementById('shareCard');
-    if(card)card.classList.remove('hidden');
-    toast('Trip synced. Ready to share.');
-  }catch(e){
-    toast(e.message==='No internet connection'?'Connect to the internet to share':'Could not sync trip');
-  }
-}
-
-async function pullLatest(){
-  if(!navigator.onLine){toast('Offline — local trip is being used');return;}
-  try{
-    const res=await fetch(API+'/api/trips/'+state.id,{cache:'no-store'});
-    if(!res.ok)throw new Error();
-    state=await res.json();
+    const method=state.pendingSync?'POST':'PUT';
+    const url=method==='POST'?API+'/api/trips':API+'/api/trips/'+state.id;
+    const res=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+    if(!res.ok) throw new Error('Sync failed');
+    state.pendingSync=false;
     await localPut(state);
-    showApp();
-    toast('Latest shared trip loaded');
-  }catch(e){toast('Could not load the shared version');}
+  }catch(e){ state.pendingSync=true; console.error(e); }
+  finally{ saving=false; }
+}
+async function syncNow(){
+  if(!state.id){ toast('No trip to sync'); return; }
+  if(!navigator.onLine){ toast('Offline — trip is saved on this device'); return; }
+  state.pendingSync=true; await saveToServer();
+  toast(state.pendingSync?'Saved locally — sync failed':'Trip synced');
 }
 
-function shortLink()
 function shortLink(){ return location.origin + '/t/' + state.id; }
 function updateShareLinks(){
   const link = shortLink();
@@ -279,7 +236,6 @@ function showApp(){
   document.getElementById('app').classList.remove('hidden');
   renderApp();
   updateShareLinks();
-  updateNetworkStatus();
   updateSharedBar();
 }
 
@@ -313,39 +269,34 @@ function renderMembersSetup(){
 }
 
 async function saveTrip(){
-  // Smart save: auto-add un-added member in the typing box
   const mName=document.getElementById('memberName').value.trim();
   const mPhone=document.getElementById('memberPhone').value.trim();
-  if(mName || mPhone){
+  if(mName||mPhone){
     if(!mName){ toast('Enter a name for the member you are typing'); return; }
     if(!isValidPhone(mPhone)){ toast('Enter a valid mobile number (10 digits)'); return; }
     if(!state.members.some(m=>m.name.toLowerCase()===mName.toLowerCase())){
-      state.members.push({id:uid(), name:mName, phone:mPhone, token:uid()});
+      state.members.push({id:uid(),name:mName,phone:mPhone,token:uid()});
       document.getElementById('memberName').value=''; document.getElementById('memberPhone').value='';
       renderMembersSetup();
     }
   }
-
   const name=document.getElementById('tripName').value.trim();
   const days=parseInt(document.getElementById('tripDays').value,10);
   if(!name){ toast('Enter trip name'); return; }
   if(!days||days<1){ toast('Enter number of days'); return; }
   if(state.members.length<2){ toast('Add yourself and at least one other member'); return; }
-
-  state.id = uid();
-  state.name=name; state.days=days; state.expenses=[];
-  state.creatorId=state.members[0].id; state.sharedWith=null;
-  currentUserId=state.creatorId;
-  setStoredIdentity(currentUserId);
+  state.id=uid(); state.name=name; state.days=days; state.expenses=[];
+  state.creatorId=state.members[0].id; state.sharedWith=null; state.pendingSync=true;
+  currentUserId=state.creatorId; setStoredIdentity(currentUserId);
   try{
     await localPut(state);
-    history.replaceState(null,'', '/t/'+state.id);
+    history.replaceState(null,'','/t/'+state.id);
     showApp();
-    toast('Trip saved on this device');
-  }catch(e){
-    toast('Could not save trip locally');
-    console.error(e);
-  }
+    if(navigator.onLine) await saveToServer();
+    toast(navigator.onLine?'Trip saved!':'Trip saved offline. It will sync when online.');
+  }catch(e){ toast('Could not save trip on this device'); console.error(e); }
+}
+
 function renderIdentityList(){
   document.getElementById('identityList').innerHTML=state.members.map(m=>\`<button onclick="selectIdentity('\${m.id}')"><div><div style="font-weight:600">\${escapeHtml(m.name)}</div>\${m.phone?\`<div class="phone">\${escapeHtml(m.phone)}</div>\`:''}</div><span style="color:var(--primary)">Select →</span></button>\`).join('');
 }
@@ -371,8 +322,6 @@ function updateSharedBar(){
 }
 
 async function shareAll(type){
-  if(!navigator.onLine){ toast('Connect to the internet to share secure links'); return; }
-  try{ await syncToServer(); }catch(e){ toast('Could not sync trip for sharing'); return; }
   const others=state.members.filter(m=>m.id!==currentUserId);
   if(!others.length){ toast('No other members to share with'); return; }
   const withPhone=[], missing=[];
@@ -403,7 +352,7 @@ async function shareAll(type){
 async function markAsShared(){
   const others=state.members.filter(m=>m.id!==state.creatorId);
   state.sharedWith=others.map(m=>m.name.slice(0,3));
-  try{ await syncToServer(); }catch(e){ toast(e.message==='No internet connection'?'Connect to the internet before marking shared':'Could not sync trip'); return; }
+  await saveToServer();
   updateSharedBar();
   document.getElementById('shareCard').classList.add('hidden');
   toast('Shared bar is now visible to everyone');
@@ -500,47 +449,6 @@ async function removeMemberFromTrip(id){
   state.expenses=state.expenses.filter(e=>e.payerId!==id);
   renderAppMembers(); renderExpenses(); await saveToServer(); toast('Member removed');
 }
-async function shareTripFile(){
-  if(!state.id){toast('No trip to share');return;}
-  const payload={format:'Trip Splitter',version:1,exportedAt:new Date().toISOString(),trip:state};
-  const fileName=(state.name||'trip').replace(/[^a-z0-9_-]+/gi,'-').replace(/^-+|-+$/g,'')+'.trip';
-  const file=new File([JSON.stringify(payload,null,2)],fileName,{type:'application/json'});
-  try{
-    if(navigator.share&&(!navigator.canShare||navigator.canShare({files:[file]}))){
-      await navigator.share({title:'Trip Splitter',text:'Trip data: '+state.name,files:[file]});
-      toast('Trip file shared');
-    }else{
-      const url=URL.createObjectURL(file);
-      const link=document.createElement('a');
-      link.href=url;link.download=fileName;document.body.appendChild(link);link.click();link.remove();
-      setTimeout(()=>URL.revokeObjectURL(url),1000);
-      toast('Trip file created');
-    }
-  }catch(e){if(e&&e.name!=='AbortError')toast('Could not share trip file');}
-}
-
-function importTripFile(event){
-  const file=event.target.files&&event.target.files[0];
-  event.target.value='';
-  if(!file)return;
-  const reader=new FileReader();
-  reader.onload=async()=>{
-    try{
-      const payload=JSON.parse(reader.result);
-      const incoming=payload&&payload.trip;
-      if(!incoming||!incoming.id||!Array.isArray(incoming.members)||!Array.isArray(incoming.expenses))throw new Error();
-      state=incoming;
-      currentUserId=null;
-      clearStoredIdentity();
-      await localPut(state);
-      history.replaceState(null,'','/t/'+state.id);
-      showIdentityPicker();
-      toast('Trip imported — choose your name');
-    }catch(e){toast('Invalid Trip Splitter file');}
-  };
-  reader.readAsText(file);
-}
-
 function copyShareLink(){
   const input=document.getElementById('shareLink')||document.getElementById('shareLinkQuick');
   if(!input)return; input.select();
@@ -551,150 +459,42 @@ function resetAll(){ if(!confirm('Start a new trip?'))return; clearStoredIdentit
 async function loadTrip(id){
   document.getElementById('loading').classList.remove('hidden');
   document.getElementById('landing').classList.add('hidden');
-  const p=new URLSearchParams(location.search);
-  const magicU=p.get('u');
-  const magicK=p.get('k');
-  const wantsRemote=!!(magicU&&magicK);
   try{
-    if(!wantsRemote){
-      const local=await localGet(id).catch(()=>null);
-      if(local){
-        state=local;
-        if(!state.creatorId&&state.members.length)state.creatorId=state.members[0].id;
-        const stored=getStoredIdentity();
-        if(stored&&state.members.some(m=>m.id===stored)){currentUserId=stored;showApp();}
-        else showIdentityPicker();
-        return;
-      }
-    }
-    if(!navigator.onLine)throw new Error('offline-no-local');
-    const res=await fetch(API+'/api/trips/'+id,{cache:'no-store'});
-    if(!res.ok)throw new Error('Not found');
-    state=await res.json();
-    if(!state.creatorId&&state.members.length)state.creatorId=state.members[0].id;
-    await localPut(state);
-    if(magicU&&magicK){
-      const validMember=state.members.find(m=>m.id===magicU&&m.token===magicK);
-      if(validMember){
-        currentUserId=validMember.id;
-        setStoredIdentity(validMember.id);
-        history.replaceState(null,'','/t/'+state.id);
-        showApp();
-        return;
-      }
-      toast('Invalid personal link.');
-    }
-    const stored=getStoredIdentity();
-    if(stored&&state.members.some(m=>m.id===stored)){currentUserId=stored;showApp();}
-    else showIdentityPicker();
-  }catch(e){
     const local=await localGet(id).catch(()=>null);
     if(local){
       state=local;
-      if(!state.creatorId&&state.members.length)state.creatorId=state.members[0].id;
-      const stored=getStoredIdentity();
-      if(stored&&state.members.some(m=>m.id===stored)){currentUserId=stored;showApp();}
-      else showIdentityPicker();
-      toast('Offline — using the saved trip on this device');
-    }else{
-      toast('Trip not found. Open it once online or import a trip file.');
-      document.getElementById('landing').classList.remove('hidden');
+      if(!state.creatorId&&state.members.length) state.creatorId=state.members[0].id;
+      const params=new URLSearchParams(location.search), u=params.get('u'), k=params.get('k');
+      if(u&&k){
+        const m=state.members.find(x=>x.id===u&&x.token===k);
+        if(m){ currentUserId=m.id; setStoredIdentity(m.id); history.replaceState(null,'','/t/'+state.id); }
+      }
+      if(!currentUserId){
+        const stored=getStoredIdentity();
+        if(stored&&state.members.some(m=>m.id===stored)) currentUserId=stored;
+      }
+      if(currentUserId) showApp(); else showIdentityPicker();
+      return;
     }
-  }finally{
-    document.getElementById('loading').classList.add('hidden');
-    updateNetworkStatus();
-  }
-}
-
-if('serviceWorker' in navigator){
-  window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'}).catch(()=>{}));
+    if(!navigator.onLine) throw new Error('offline-no-local');
+    const res=await fetch(API+'/api/trips/'+id,{cache:'no-store'});
+    if(!res.ok) throw new Error('Not found');
+    state=await res.json();
+    if(!state.creatorId&&state.members.length) state.creatorId=state.members[0].id;
+    await localPut(state);
+    const stored=getStoredIdentity();
+    if(stored&&state.members.some(m=>m.id===stored)){ currentUserId=stored; showApp(); } else showIdentityPicker();
+  }catch(e){
+    toast('Trip not available offline. Open it once online or create a new trip.');
+    document.getElementById('landing').classList.remove('hidden');
+  }finally{ document.getElementById('loading').classList.add('hidden'); }
 }
 
 (function init(){
   const path=location.pathname;
-  const m=path.match(new RegExp('^/t/([a-z0-9-]+)
-</script>
-</body>
-</html>`;
-
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    const path = url.pathname;
-
-    // Handle CORS
-    if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        },
-      });
-    }
-
-    // Handle API: Create trip
-    if (path === '/api/trips' && request.method === 'POST') {
-      try {
-        const body = await request.json();
-        const id = body.id || crypto.randomUUID().slice(0, 8);
-        body.id = id;
-        await env.TRIP_STORE.put('trip:' + id, JSON.stringify(body), { expirationTtl: 60 * 60 * 24 * 90 }); 
-        return json({ id, ok: true });
-      } catch (e) {
-        return json({ error: e.message }, 500);
-      }
-    }
-
-    // Handle API: Get / Update trip
-    const tripMatch = path.match(/^\/api\/trips\/([a-z0-9-]+)$/i);
-    if (tripMatch) {
-      const id = tripMatch[1];
-      if (request.method === 'GET') {
-        const data = await env.TRIP_STORE.get('trip:' + id);
-        if (!data) return json({ error: 'Not found' }, 404);
-        return json(JSON.parse(data));
-      }
-      if (request.method === 'PUT') {
-        try {
-          const body = await request.json();
-          body.id = id;
-          await env.TRIP_STORE.put('trip:' + id, JSON.stringify(body), { expirationTtl: 60 * 60 * 24 * 90 });
-          return json({ ok: true });
-        } catch (e) {
-          return json({ error: e.message }, 500);
-        }
-      }
-    }
-
-    // Root HTML page and Short links (Added /index.html check as a safety net)
-    if (path === '/' || path === '/index.html' || path.startsWith('/t/')) {
-      return new Response(HTML_PAGE, {
-        headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-cache' },
-      });
-    }
-
-    // Load assets (icons)
-    return env.ASSETS.fetch(request);
-  },
-};
-
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    },
-  });
-}
-,'i'));
+  const m=path.match(/^\/t\/([a-z0-9-]+)$/i);
   if(m) loadTrip(m[1]);
   else document.getElementById('landing').classList.remove('hidden');
-
-  // Bind the primary buttons directly as a safety net for iOS standalone PWA.
-  const createBtn=document.querySelector('#landing button.btn-primary');
-  if(createBtn) createBtn.addEventListener('click',showCreate);
 })();
 </script>
 </body>
@@ -750,8 +550,8 @@ export default {
       }
     }
 
-    // Root HTML page and Short links (Added /index.html check as a safety net)
-    if (path === '/' || path === '/index.html' || path.startsWith('/t/')) {
+    // Root HTML page and Short links
+    if (path === '/' || path.startsWith('/t/')) {
       return new Response(HTML_PAGE, {
         headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-cache' },
       });
