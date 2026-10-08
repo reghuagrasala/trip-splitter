@@ -490,6 +490,12 @@ async function loadTrip(id){
   }finally{ document.getElementById('loading').classList.add('hidden'); }
 }
 
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'}).catch(()=>{}));
+}
+window.addEventListener('online',()=>{ if(state.id&&state.pendingSync) saveToServer(); });
+persistStorage();
+
 (function init(){
   const path=location.pathname;
   const m=path.match(/^\/t\/([a-z0-9-]+)$/i);
