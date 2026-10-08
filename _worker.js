@@ -612,10 +612,89 @@ if('serviceWorker' in navigator){
 
 (function init(){
   const path=location.pathname;
-  // FIXED SYNTAX ERROR HERE (Added double backslashes)
-  const m=path.match(/^\\/t\\/([a-z0-9-]+)$/i);
+  const m=path.match(new RegExp('^/t/([a-z0-9-]+)
+</script>
+</body>
+</html>`;
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    // Handle CORS
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        },
+      });
+    }
+
+    // Handle API: Create trip
+    if (path === '/api/trips' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const id = body.id || crypto.randomUUID().slice(0, 8);
+        body.id = id;
+        await env.TRIP_STORE.put('trip:' + id, JSON.stringify(body), { expirationTtl: 60 * 60 * 24 * 90 }); 
+        return json({ id, ok: true });
+      } catch (e) {
+        return json({ error: e.message }, 500);
+      }
+    }
+
+    // Handle API: Get / Update trip
+    const tripMatch = path.match(/^\/api\/trips\/([a-z0-9-]+)$/i);
+    if (tripMatch) {
+      const id = tripMatch[1];
+      if (request.method === 'GET') {
+        const data = await env.TRIP_STORE.get('trip:' + id);
+        if (!data) return json({ error: 'Not found' }, 404);
+        return json(JSON.parse(data));
+      }
+      if (request.method === 'PUT') {
+        try {
+          const body = await request.json();
+          body.id = id;
+          await env.TRIP_STORE.put('trip:' + id, JSON.stringify(body), { expirationTtl: 60 * 60 * 24 * 90 });
+          return json({ ok: true });
+        } catch (e) {
+          return json({ error: e.message }, 500);
+        }
+      }
+    }
+
+    // Root HTML page and Short links (Added /index.html check as a safety net)
+    if (path === '/' || path === '/index.html' || path.startsWith('/t/')) {
+      return new Response(HTML_PAGE, {
+        headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-cache' },
+      });
+    }
+
+    // Load assets (icons)
+    return env.ASSETS.fetch(request);
+  },
+};
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    },
+  });
+}
+,'i'));
   if(m) loadTrip(m[1]);
   else document.getElementById('landing').classList.remove('hidden');
+
+  // Bind the primary buttons directly as a safety net for iOS standalone PWA.
+  const createBtn=document.querySelector('#landing button.btn-primary');
+  if(createBtn) createBtn.addEventListener('click',showCreate);
 })();
 </script>
 </body>
