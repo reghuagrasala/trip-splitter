@@ -618,9 +618,9 @@ if('serviceWorker' in navigator){
 }
 
 (function init(){
+  requestPersistentStorage();
   const path=location.pathname;
-  // FIXED SYNTAX ERROR HERE (Added double backslashes)
-  const m=path.match(/^\\/t\\/([a-z0-9-]+)$/i);
+  const m=path.match(/^\/t\/([a-z0-9-]+)$/i);
   if(m) loadTrip(m[1]);
   else document.getElementById('landing').classList.remove('hidden');
 })();
