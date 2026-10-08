@@ -477,7 +477,7 @@ async function loadTrip(id){
     const local=await localLoadTrip(id).catch(()=>null);
     if(local){
       state=local;
-      state.serverCreated=true;
+      if(typeof state.serverCreated!=='boolean') state.serverCreated=false;
       if(!state.creatorId&&state.members.length) state.creatorId=state.members[0].id;
       const stored=getStoredIdentity();
       if(stored&&state.members.some(m=>m.id===stored)){ currentUserId=stored; showApp(); } else showIdentityPicker();
