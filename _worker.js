@@ -564,6 +564,12 @@ export default {
       }
     }
 
+    if (path === '/sw.js') {
+      return new Response(SW_SCRIPT, {
+        headers: { 'Content-Type': 'application/javascript; charset=UTF-8', 'Cache-Control': 'no-cache' },
+      });
+    }
+
     // Root HTML page and Short links
     if (path === '/' || path === '/index.html' || path.startsWith('/t/')) {
       return new Response(HTML_PAGE, {
