@@ -191,6 +191,14 @@ function updateNetworkStatus(){
 window.addEventListener('online',updateNetworkStatus);
 window.addEventListener('offline',updateNetworkStatus);
 
+async function requestPersistentStorage(){
+  try{
+    if(navigator.storage&&navigator.storage.persist){
+      await navigator.storage.persist();
+    }
+  }catch(e){}
+}
+
 async function saveToServer(){
   if(!state.id)return;
   try{ await localPut(state); updateNetworkStatus(); }
@@ -230,7 +238,6 @@ async function pullLatest(){
   }catch(e){toast('Could not load the shared version');}
 }
 
-function shortLink()
 function shortLink(){ return location.origin + '/t/' + state.id; }
 function updateShareLinks(){
   const link = shortLink();
