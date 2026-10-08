@@ -1,4 +1,4 @@
-const CACHE='trip-splitter-v3';
+const CACHE='trip-splitter-v4';
 const APP_SHELL=['/','/manifest.json','/icon-192.png','/icon-512.png','/apple-touch-icon.png'];
 
 self.addEventListener('install',event=>{
@@ -12,7 +12,10 @@ self.addEventListener('install',event=>{
 self.addEventListener('activate',event=>{
   event.waitUntil(
     caches.keys()
-      .then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))
+      .then(keys=>Promise.all(
+        keys.filter(k=>k.startsWith('trip-splitter-')&&k!==CACHE)
+          .map(k=>caches.delete(k))
+      ))
       .then(()=>self.clients.claim())
   );
 });
@@ -24,24 +27,21 @@ self.addEventListener('fetch',event=>{
   const url=new URL(req.url);
   if(url.origin!==location.origin) return;
 
-  // Trip data is stored in IndexedDB by the app. Do not cache API
-  // responses, which could otherwise overwrite the local-first model.
+  // Never cache API responses. Trip data is kept locally in IndexedDB.
   if(url.pathname.startsWith('/api/')) return;
 
-  // The worker serves /t/<id> with the same HTML app. Return the cached
-  // app shell immediately when offline; IndexedDB restores the trip.
+  // The Worker generates the HTML for both / and /t/<id>.
+  // Network first keeps the installed app current; cached shell is the
+  // offline fallback.
   if(req.mode==='navigate'){
     event.respondWith(
-      caches.match('/').then(cached=>{
-        const network=fetch(req).then(res=>{
-          if(res.ok){
-            const copy=res.clone();
-            caches.open(CACHE).then(cache=>cache.put('/',copy));
-          }
-          return res;
-        }).catch(()=>cached);
-        return cached || network;
-      })
+      fetch(req).then(res=>{
+        if(res.ok){
+          const copy=res.clone();
+          caches.open(CACHE).then(cache=>cache.put('/',copy));
+        }
+        return res;
+      }).catch(()=>caches.match('/'))
     );
     return;
   }
@@ -55,7 +55,7 @@ self.addEventListener('fetch',event=>{
           caches.open(CACHE).then(cache=>cache.put(req,copy));
         }
         return res;
-      }).catch(()=>cached);
+      });
     })
   );
 });
