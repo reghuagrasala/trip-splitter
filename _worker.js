@@ -129,35 +129,46 @@ const API = location.origin;
 let state = { id:null, name:'', days:0, members:[], expenses:[], creatorId:null, sharedWith:null };
 let currentUserId = null;
 let saving = false;
-const DB_NAME='trip-splitter-local-v2';
-const DB_STORE='trips';
-let localDbPromise=null;
-function openLocalDb(){
+
+const LOCAL_DB_NAME = 'trip-splitter-local-v1';
+const LOCAL_DB_STORE = 'trips';
+let localDbPromise = null;
+
+function openLocalDB(){
   if(localDbPromise) return localDbPromise;
-  localDbPromise=new Promise((resolve,reject)=>{
+  localDbPromise = new Promise((resolve,reject)=>{
     if(!window.indexedDB){ reject(new Error('IndexedDB unavailable')); return; }
-    const req=indexedDB.open(DB_NAME,1);
-    req.onupgradeneeded=()=>{ const db=req.result; if(!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE,{keyPath:'id'}); };
+    const req=indexedDB.open(LOCAL_DB_NAME,1);
+    req.onupgradeneeded=()=>{
+      const db=req.result;
+      if(!db.objectStoreNames.contains(LOCAL_DB_STORE)) db.createObjectStore(LOCAL_DB_STORE,{keyPath:'id'});
+    };
     req.onsuccess=()=>resolve(req.result);
     req.onerror=()=>reject(req.error||new Error('IndexedDB error'));
   });
   return localDbPromise;
 }
-function localPut(trip){
-  return openLocalDb().then(db=>new Promise((resolve,reject)=>{
-    const tx=db.transaction(DB_STORE,'readwrite');
-    tx.objectStore(DB_STORE).put(JSON.parse(JSON.stringify(trip)));
-    tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error||new Error('Local save failed'));
+function localSaveTrip(trip){
+  return openLocalDB().then(db=>new Promise((resolve,reject)=>{
+    const tx=db.transaction(LOCAL_DB_STORE,'readwrite');
+    tx.objectStore(LOCAL_DB_STORE).put(JSON.parse(JSON.stringify(trip)));
+    tx.oncomplete=resolve;
+    tx.onerror=()=>reject(tx.error||new Error('Local save failed'));
   }));
 }
-function localGet(id){
-  return openLocalDb().then(db=>new Promise((resolve,reject)=>{
-    const tx=db.transaction(DB_STORE,'readonly');
-    const req=tx.objectStore(DB_STORE).get(id);
-    req.onsuccess=()=>resolve(req.result||null); req.onerror=()=>reject(req.error||new Error('Local read failed'));
+function localLoadTrip(id){
+  return openLocalDB().then(db=>new Promise((resolve,reject)=>{
+    const tx=db.transaction(LOCAL_DB_STORE,'readonly');
+    const req=tx.objectStore(LOCAL_DB_STORE).get(id);
+    req.onsuccess=()=>resolve(req.result||null);
+    req.onerror=()=>reject(req.error||new Error('Local read failed'));
   }));
 }
-async function persistStorage(){ try{ if(navigator.storage&&navigator.storage.persist) await navigator.storage.persist(); }catch(e){} }
+async function requestPersistentStorage(){
+  try{
+    if(navigator.storage&&navigator.storage.persist) await navigator.storage.persist();
+  }catch(e){}
+}
 
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function formatINR(n){ return '₹'+Number(n).toLocaleString('en-IN',{maximumFractionDigits:2}); }
@@ -167,25 +178,33 @@ function cleanPhone(p){ if(!p)return''; let x=String(p).replace(/\\D/g,''); if(x
 function isValidPhone(p){ return cleanPhone(p)!==''; }
 
 async function saveToServer(){
-  if(!state.id) return;
-  try{ await localPut(state); }catch(e){ console.error(e); toast('Could not save locally'); return; }
-  if(!navigator.onLine || saving) return;
+  if(!state.id) return false;
+  try{ await localSaveTrip(state); }
+  catch(e){ console.error(e); toast('Could not save locally'); return false; }
+  if(!navigator.onLine||saving) return false;
   saving=true;
   try{
     const method=state.pendingSync?'POST':'PUT';
     const url=method==='POST'?API+'/api/trips':API+'/api/trips/'+state.id;
     const res=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
     if(!res.ok) throw new Error('Sync failed');
+    const data=method==='POST'?await res.json():null;
+    if(data&&data.id) state.id=data.id;
     state.pendingSync=false;
-    await localPut(state);
-  }catch(e){ state.pendingSync=true; console.error(e); }
-  finally{ saving=false; }
+    await localSaveTrip(state);
+    return true;
+  }catch(e){
+    state.pendingSync=true;
+    console.error(e);
+    return false;
+  }finally{ saving=false; }
 }
-async function syncNow(){
+async function syncLocalTrip(){
   if(!state.id){ toast('No trip to sync'); return; }
-  if(!navigator.onLine){ toast('Offline — trip is saved on this device'); return; }
-  state.pendingSync=true; await saveToServer();
-  toast(state.pendingSync?'Saved locally — sync failed':'Trip synced');
+  if(!navigator.onLine){ toast('Offline — your trip is saved on this device'); return; }
+  state.pendingSync=true;
+  const ok=await saveToServer();
+  toast(ok?'Trip synced':'Saved locally — sync will retry when online');
 }
 
 function shortLink(){ return location.origin + '/t/' + state.id; }
@@ -269,32 +288,32 @@ function renderMembersSetup(){
 }
 
 async function saveTrip(){
-  const mName=document.getElementById('memberName').value.trim();
-  const mPhone=document.getElementById('memberPhone').value.trim();
-  if(mName||mPhone){
-    if(!mName){ toast('Enter a name for the member you are typing'); return; }
-    if(!isValidPhone(mPhone)){ toast('Enter a valid mobile number (10 digits)'); return; }
-    if(!state.members.some(m=>m.name.toLowerCase()===mName.toLowerCase())){
-      state.members.push({id:uid(),name:mName,phone:mPhone,token:uid()});
-      document.getElementById('memberName').value=''; document.getElementById('memberPhone').value='';
-      renderMembersSetup();
-    }
-  }
   const name=document.getElementById('tripName').value.trim();
   const days=parseInt(document.getElementById('tripDays').value,10);
   if(!name){ toast('Enter trip name'); return; }
   if(!days||days<1){ toast('Enter number of days'); return; }
-  if(state.members.length<2){ toast('Add yourself and at least one other member'); return; }
-  state.id=uid(); state.name=name; state.days=days; state.expenses=[];
-  state.creatorId=state.members[0].id; state.sharedWith=null; state.pendingSync=true;
-  currentUserId=state.creatorId; setStoredIdentity(currentUserId);
+  if(state.members.length<1){ toast('Add at least one member'); return; }
+
+  state.id=uid();
+  state.name=name;
+  state.days=days;
+  state.expenses=[];
+  state.creatorId=state.members[0].id;
+  state.sharedWith=null;
+  state.pendingSync=true;
+  currentUserId=state.creatorId;
+  setStoredIdentity(currentUserId);
+
   try{
-    await localPut(state);
+    await localSaveTrip(state);
     history.replaceState(null,'','/t/'+state.id);
     showApp();
     if(navigator.onLine) await saveToServer();
-    toast(navigator.onLine?'Trip saved!':'Trip saved offline. It will sync when online.');
-  }catch(e){ toast('Could not save trip on this device'); console.error(e); }
+    toast(navigator.onLine?'Trip saved! Share the short link':'Trip saved offline. It will sync when online.');
+  }catch(e){
+    console.error(e);
+    toast('Could not save trip on this device');
+  }
 }
 
 function renderIdentityList(){
@@ -460,32 +479,30 @@ async function loadTrip(id){
   document.getElementById('loading').classList.remove('hidden');
   document.getElementById('landing').classList.add('hidden');
   try{
-    const local=await localGet(id).catch(()=>null);
+    const local=await localLoadTrip(id).catch(()=>null);
     if(local){
       state=local;
       if(!state.creatorId&&state.members.length) state.creatorId=state.members[0].id;
-      const params=new URLSearchParams(location.search), u=params.get('u'), k=params.get('k');
-      if(u&&k){
-        const m=state.members.find(x=>x.id===u&&x.token===k);
-        if(m){ currentUserId=m.id; setStoredIdentity(m.id); history.replaceState(null,'','/t/'+state.id); }
-      }
-      if(!currentUserId){
-        const stored=getStoredIdentity();
-        if(stored&&state.members.some(m=>m.id===stored)) currentUserId=stored;
-      }
-      if(currentUserId) showApp(); else showIdentityPicker();
+      const stored=getStoredIdentity();
+      if(stored&&state.members.some(m=>m.id===stored)){ currentUserId=stored; showApp(); }
+      else showIdentityPicker();
+      if(navigator.onLine&&state.pendingSync) saveToServer();
       return;
     }
-    if(!navigator.onLine) throw new Error('offline-no-local');
+
+    if(!navigator.onLine) throw new Error('Trip not stored locally');
     const res=await fetch(API+'/api/trips/'+id,{cache:'no-store'});
     if(!res.ok) throw new Error('Not found');
     state=await res.json();
     if(!state.creatorId&&state.members.length) state.creatorId=state.members[0].id;
-    await localPut(state);
+    state.pendingSync=false;
+    await localSaveTrip(state);
     const stored=getStoredIdentity();
-    if(stored&&state.members.some(m=>m.id===stored)){ currentUserId=stored; showApp(); } else showIdentityPicker();
+    if(stored&&state.members.some(m=>m.id===stored)){ currentUserId=stored; showApp(); }
+    else showIdentityPicker();
   }catch(e){
-    toast('Trip not available offline. Open it once online or create a new trip.');
+    console.error(e);
+    toast('Trip not found or not available offline');
     document.getElementById('landing').classList.remove('hidden');
   }finally{ document.getElementById('loading').classList.add('hidden'); }
 }
@@ -494,7 +511,7 @@ if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'}).catch(()=>{}));
 }
 window.addEventListener('online',()=>{ if(state.id&&state.pendingSync) saveToServer(); });
-persistStorage();
+requestPersistentStorage();
 
 (function init(){
   const path=location.pathname;
@@ -505,6 +522,34 @@ persistStorage();
 </script>
 </body>
 </html>`;
+
+const SW_SCRIPT = `const CACHE='trip-splitter-v5';
+const APP_SHELL=['/','/manifest.json','/icon-192.png','/icon-512.png','/apple-touch-icon.png'];
+self.addEventListener('install',event=>{
+  event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(APP_SHELL)).then(()=>self.skipWaiting()));
+});
+self.addEventListener('activate',event=>{
+  event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('trip-splitter-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
+});
+self.addEventListener('fetch',event=>{
+  const req=event.request;
+  if(req.method!=='GET') return;
+  const url=new URL(req.url);
+  if(url.origin!==location.origin) return;
+  if(url.pathname.startsWith('/api/')) return;
+  if(req.mode==='navigate'){
+    event.respondWith(fetch(req).then(res=>{
+      if(res.ok){ const copy=res.clone(); caches.open(CACHE).then(cache=>cache.put('/',copy)); }
+      return res;
+    }).catch(()=>caches.match('/')));
+    return;
+  }
+  event.respondWith(caches.match(req).then(cached=>cached||fetch(req).then(res=>{
+    if(res.ok){ const copy=res.clone(); caches.open(CACHE).then(cache=>cache.put(req,copy)); }
+    return res;
+  })));
+});
+`;
 
 export default {
   async fetch(request, env) {
