@@ -191,14 +191,6 @@ function updateNetworkStatus(){
 window.addEventListener('online',updateNetworkStatus);
 window.addEventListener('offline',updateNetworkStatus);
 
-async function requestPersistentStorage(){
-  try{
-    if(navigator.storage&&navigator.storage.persist){
-      await navigator.storage.persist();
-    }
-  }catch(e){}
-}
-
 async function saveToServer(){
   if(!state.id)return;
   try{ await localPut(state); updateNetworkStatus(); }
@@ -238,6 +230,7 @@ async function pullLatest(){
   }catch(e){toast('Could not load the shared version');}
 }
 
+function shortLink()
 function shortLink(){ return location.origin + '/t/' + state.id; }
 function updateShareLinks(){
   const link = shortLink();
@@ -618,9 +611,9 @@ if('serviceWorker' in navigator){
 }
 
 (function init(){
-  requestPersistentStorage();
   const path=location.pathname;
-  const m=path.match(/^\/t\/([a-z0-9-]+)$/i);
+  // FIXED SYNTAX ERROR HERE (Added double backslashes)
+  const m=path.match(/^\\/t\\/([a-z0-9-]+)$/i);
   if(m) loadTrip(m[1]);
   else document.getElementById('landing').classList.remove('hidden');
 })();
